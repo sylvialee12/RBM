@@ -65,8 +65,8 @@ class rbm_classicalsolver:
             # that the code is runable on GPU
             initial_Wreal = np.asarray(
                 np_rng.uniform(
-                    low=-4 * np.sqrt(6. / (nhidden + nvisible)),
-                    high=4 * np.sqrt(6. / (nhidden + nvisible)),
+                    low=-2* np.sqrt(6. / (nhidden + nvisible)),
+                    high=2 * np.sqrt(6. / (nhidden + nvisible)),
                     size=(nvisible, nhidden)
                 ),
                 dtype=theano.config.floatX
@@ -81,8 +81,8 @@ class rbm_classicalsolver:
             # that the code is runable on GPU
             initial_Wimag = np.asarray(
                 np_rng.uniform(
-                    low=-4 * np.sqrt(6. / (nhidden + nvisible)),
-                    high=4 * np.sqrt(6. / (nhidden + nvisible)),
+                    low= -2 * np.sqrt(6. / (nhidden + nvisible)),
+                    high=2 * np.sqrt(6. / (nhidden + nvisible)),
                     size=(nvisible, nhidden)
                 ),
                 dtype=theano.config.floatX
@@ -97,8 +97,8 @@ class rbm_classicalsolver:
                     nhidden,
                     dtype=theano.config.floatX
                 ),
-                name='hbias',
-                borrow=True
+                name = 'hbias',
+                borrow = True
             )
 
         if vbias is None:
@@ -119,15 +119,15 @@ class rbm_classicalsolver:
         # self.input=input
 
         self.W_real = W_real
-        self.W_imag=W_imag
+        self.W_imag = W_imag
         self.hbias = hbias
         self.vbias = vbias
         self.theano_rng = theano_rng
-        self.input=input
+        self.input = input
         # **** WARNING: It is not a good idea to put things in this list
         # other than shared variables created in this function.
         #self.params = [self.W_real,self.W_imag,self.hbias, self.vbias]
-        self.params=[self.W_real,self.hbias,self.vbias]
+        self.params = [self.W_real,self.hbias,self.vbias]
 
 
     def prop_up(self,vis):
@@ -137,7 +137,7 @@ class rbm_classicalsolver:
 
         :param vis: visible samples
         :return pre_activation: for later optimization
-                activation_simoid value for transition probability P(h_i|vis)
+                activation_sigmoid value for transition probability P(h_i|vis)
         """
         pre_activation=(2.0*self.hbias)+T.dot(vis,2.0*self.W_real)
         return [pre_activation,T.nnet.sigmoid(pre_activation)]
@@ -271,7 +271,7 @@ class rbm_classicalsolver:
                  T.sum(
                      T.log(T.cosh(self.hbias+T.shape_padaxis(self.W_real,axis=0)*T.shape_padaxis(v_sample,axis=-1))),axis=2)
                 
-        return T.mean(T.sum(T.exp(exponent),axis=1))
+        return T.sum(T.exp(exponent),axis=1)
 
 
 
@@ -293,7 +293,7 @@ class rbm_classicalsolver:
         #changingweight,_=theano.map(lambda x: self.changing_weight(x),sequences=[v1_sample])
         
         #esp=1/2*Hamiltonian.hfield*T.mean(changingweight)
-        esp=1/2*Hamiltonian.hfield*self.changing_weight2(v1_sample)
+        esp=T.mean(1/2*Hamiltonian.hfield*self.changing_weight2(v1_sample))
         return ess+esp
 
 
@@ -360,9 +360,12 @@ class rbm_classicalsolver:
         gparams = T.grad(variational, self.params, consider_constant=[chain_end])
         # end-snippet-3 start-snippet-4
         # constructs the update dictionary
+
+        rng = np.random.RandomState(1234)
+
         for gparam, param in zip(gparams, self.params):
             # make sure that the learning rate is of the right dtype
-            updates[param] = param - gparam * T.cast(
+            updates[param] = param - (gparam+rng.normal(0,0.01))* T.cast(
                 lr,
                 dtype=theano.config.floatX
             )
@@ -376,29 +379,29 @@ class rbm_classicalsolver:
         Get the magnetization of the variational wave function through sampling,
         the samples must be the end of the Markov chain
         """
-        sz=T.mean(v1_sample)
+        sz=T.mean(T.abs_(T.mean(v1_sample,axis=1)))
         return sz
 
 
 def testRBM_classical():
     """
     """
-    hfield=0.1
-    nspin=100
-    alpha=2
-    n_sample=1000
+    hfield = 1
+    nspin = 20
+    alpha = 2
+    n_sample = 1000
     rng = np.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
-    ising1d=Ising1D.Ising1D(nspin,hfield)
-    initial_sample=theano.shared(2*rng.binomial(size=(n_sample,nspin),
-                                          n=1,p=0.5).astype('float64')-1,borrow=True)
-    rbm_classical=rbm_classicalsolver(nvisible=nspin,nhidden=alpha*nspin,
+    ising1d = Ising1D.Ising1D(nspin,hfield)
+    initial_sample = theano.shared(2*rng.binomial(size=(n_sample,nspin),
+                                          n=1,p=1).astype('float64')-1,borrow=True)
+    rbm_classical = rbm_classicalsolver(nvisible=nspin,nhidden=alpha*nspin,
                                       input=initial_sample,
                                       np_rng=rng,theano_rng=theano_rng)
 
-    updates,variational_energy,sz=rbm_classical.variational_update(ising1d,
+    updates,variational_energy,sz = rbm_classical.variational_update(ising1d,
                                                                 persistent=None,
-                                                                k=1)
+                                                                k=100)
     # start-snippet-5
     # it is ok for a theano function to have no output
     # the purpose of train_rbm is solely to update the RBM parameters
@@ -413,14 +416,34 @@ def testRBM_classical():
         name='train_rbm'
     )
 
-    times=200
+    times = 200
+    energy = np.zeros(times)
+    magnetization = np.zeros(times)
     for epoch in range(times):
         # go through the training set
         print(epoch)
         [mean_cost,sz] = train_rbm()
         print("For epoch %d , the variational energy is %f, /n magnetization is %f"
         %(epoch,mean_cost,sz))
+        energy[epoch] = mean_cost
+        magnetization[epoch] = sz
 
+    return energy,magnetization
+
+def visualize_data(energy,magnetization):
+    """
+
+    :param energy:
+    :param magnetization:
+    :return:
+    """
+    plt.figure()
+    plt.subplot(2,1,1)
+    plt.plot(energy,label="energy")
+    plt.subplot(2,1,2)
+    plt.plot(magnetization,label="mz")
+    plt.show()
 
 if __name__=="__main__":
-    testRBM_classical()
+    energy,magnetization = testRBM_classical()
+    visualize_data(energy,magnetization)

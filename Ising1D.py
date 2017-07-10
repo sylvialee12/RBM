@@ -10,14 +10,20 @@ class Ising1D:
         """
 
         """
-        self.nspin=nspins
-        self.hfield=hfield
-        self.pbc=pbc
+        self.nspin = nspins
+        self.hfield = hfield
+        self.pbc = pbc
 
-    def findcon(self,config):
+    def energy(self,config):
         """
         Finding the nonzero configuration for given configuration,
         which satisfies <s'|H|s> is nonzero
         """
+
+
+        ess = -sum(config[1:]*config[0:-1]) - self.pbc*config[-1]*config[0]
+
         pass
+
+
 
